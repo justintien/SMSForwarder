@@ -1,0 +1,4 @@
+<resources>
+    <string name="discord_webhook"></string>
+    <string name="receiver_mobile"></string>
+</resources>
