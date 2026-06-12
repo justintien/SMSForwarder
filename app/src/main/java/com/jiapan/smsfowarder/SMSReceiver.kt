@@ -15,6 +15,10 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.Response
 import java.io.IOException
+import java.util.Date
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class SmsReceiver  : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -33,11 +37,34 @@ class SmsReceiver  : BroadcastReceiver() {
                     Log.e("SmsReceiver", "SMS received from: $sender, message: $messageBody")
                     showToast(context, "SMS received from: $sender, message: $messageBody")
 
+                    // 儲存到資料庫（使用協程）
+                    saveSmsToDatabase(context, sender, messageBody)
+
                     // 發送至 Discord Webhook
                     sendToDiscordWebhook(context, sender, messageBody)
 
                     sendLocalBroadcast(context, sender, messageBody)
                 }
+            }
+        }
+    }
+
+    private fun saveSmsToDatabase(context: Context, sender: String, message: String) {
+        // 建立資料庫實例
+        val database = SmsMessageDatabase.getDatabase(context)
+
+        // 使用協程在背景執行緒中儲存訊息
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val smsMessage = SmsMessage(
+                    sender = sender,
+                    message = message,
+                    timestamp = Date()
+                )
+                database.smsMessageDao().insertSmsMessage(smsMessage)
+                Log.d("SmsReceiver", "SMS message saved to database")
+            } catch (e: Exception) {
+                Log.e("SmsReceiver", "Failed to save SMS message to database", e)
             }
         }
     }

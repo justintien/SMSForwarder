@@ -10,4 +10,8 @@
     <string name="lorem_ipsum">
         SMS Forwarder v20241102
     </string>
+
+    <!-- Discord Webhook settings -->
+    <string name="discord_webhook">https://discord.com/api/webhooks/your-webhook-url</string>
+    <string name="receiver_mobile">+886912345678</string>
 </resources>
