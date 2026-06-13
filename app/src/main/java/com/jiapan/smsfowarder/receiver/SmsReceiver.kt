@@ -5,15 +5,20 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import android.util.Log
-import com.jiapan.smsfowarder.data.DiscordSender
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
+import androidx.work.Data
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.jiapan.smsfowarder.data.db.AppDatabase
 import com.jiapan.smsfowarder.data.db.SmsRecord
-import com.jiapan.smsfowarder.data.settings.SettingsRepository
+import com.jiapan.smsfowarder.work.ForwardWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.util.concurrent.TimeUnit
 
 class SmsReceiver : BroadcastReceiver() {
 
@@ -32,25 +37,42 @@ class SmsReceiver : BroadcastReceiver() {
 
         Log.d(TAG, "SMS from $sender: $body")
 
-        // Keep the receiver alive while we persist + forward off the main thread.
+        // Persist quickly, then hand forwarding off to WorkManager and finish well within
+        // the BroadcastReceiver time limit. Doing the network call here (the old behaviour)
+        // could blow past that ~10s window on a slow webhook and get the whole process
+        // killed, dropping messages entirely — neither saved nor forwarded.
         val pendingResult = goAsync()
         val appContext = context.applicationContext
         scope.launch {
             try {
-                val db = AppDatabase.getInstance(appContext)
-                db.smsDao().insert(
+                AppDatabase.getInstance(appContext).smsDao().insert(
                     SmsRecord(sender = sender, body = body, timestamp = timestamp)
                 )
-
-                val webhooks = db.webhookDao().getEnabled()
-                val receiver = SettingsRepository(appContext).receiverMobile.first()
-                DiscordSender.send(webhooks, receiver, sender, body)
+                enqueueForward(appContext, sender, body)
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to handle incoming SMS", e)
+                Log.e(TAG, "Failed to persist/enqueue incoming SMS", e)
             } finally {
                 pendingResult.finish()
             }
         }
+    }
+
+    private fun enqueueForward(context: Context, sender: String, body: String) {
+        val request = OneTimeWorkRequestBuilder<ForwardWorker>()
+            .setInputData(
+                Data.Builder()
+                    .putString(ForwardWorker.KEY_SENDER, sender)
+                    .putString(ForwardWorker.KEY_BODY, body)
+                    .build()
+            )
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+        WorkManager.getInstance(context).enqueue(request)
     }
 
     companion object {
