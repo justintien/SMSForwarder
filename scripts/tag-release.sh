@@ -25,7 +25,10 @@ if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
   exit 1
 fi
 
-echo "準備發版 $tag（來自 gradle.properties）"
+# Braces are required, not cosmetic: macOS bash 3.2 is not multibyte-aware and
+# folds the leading byte of an adjacent full-width character into the variable
+# name, so a bare $tag here resolves to an unset name and set -u aborts.
+echo "準備發版 ${tag}（來自 gradle.properties）"
 git tag -a "$tag" -m "Release $version"
 git push origin "$tag"
 
@@ -33,5 +36,5 @@ remote_url=$(git remote get-url origin)
 repo_path=$(echo "$remote_url" | sed -E 's#(git@github\.com:|https://github\.com/)##; s#\.git$##')
 
 echo
-echo "已推送 $tag。建置進度："
+echo "已推送 ${tag}。建置進度："
 echo "  https://github.com/$repo_path/actions"
